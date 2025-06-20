@@ -98,6 +98,10 @@ class OfflineProcessorConfig(ProcessorConfig):
         default=False,
         description="Whether the input messages have images.",
     )
+    has_video: bool = Field(
+        default=False,
+        description="Whether the input messages have videos.",
+    )
 
 
 @PublicAPI(stability="alpha")

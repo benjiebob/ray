@@ -112,6 +112,7 @@ class vLLMEngineProcessorConfig(_vLLMEngineProcessorConfig):
             If not, vLLM will tokenize the prompt in the engine.
         detokenize: Whether to detokenize the output.
         has_image: Whether the input messages have images.
+        has_video: Whether the input messages have videos.
         accelerator_type: The accelerator type used by the LLM stage in a processor.
             Default to None, meaning that only the CPU will be used.
         concurrency: The number of workers for data parallelism. Default to 1.

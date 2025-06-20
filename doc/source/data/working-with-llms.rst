@@ -284,6 +284,184 @@ This example applies 2 adjustments on top of the previous example:
     vision_processed_ds = vision_processor(vision_dataset).materialize()
     vision_processed_ds.show(3)
 
+.. _video_language_model:
+
+Batch inference with video inputs
+--------------------------------------------------------
+
+Ray Data LLM now supports running batch inference with models that can process video inputs. 
+This example shows how to prepare a dataset with videos and run batch inference with
+vision language models that support video processing.
+
+To use video inputs, make these adjustments:
+
+- Set ``has_video=True`` in ``vLLMEngineProcessorConfig``
+- Configure video processing parameters like fps or number of frames in ``mm_processor_kwargs``
+- Prepare video input in your preprocessor function
+
+The following examples demonstrate video processing with two popular models.
+
+**Example 1: Using Qwen2.5-VL with Video Input**
+
+.. testcode::
+
+    import ray
+    from ray.data.llm import vLLMEngineProcessorConfig, build_llm_processor
+    from PIL import Image
+    from io import BytesIO
+    
+    # Create a dataset with video files or URLs
+    videos_dataset = ray.data.from_items([
+        {"video_path": "path/to/video.mp4", 
+         "question": "What's happening in this video?"}
+    ])
+    
+    # Configure the processor for Qwen2.5-VL
+    video_processor_config = vLLMEngineProcessorConfig(
+        model_source="Qwen/Qwen2.5-VL-3B-Instruct",
+        engine_kwargs=dict(
+            tensor_parallel_size=1,
+            pipeline_parallel_size=1,
+            max_model_len=4096,
+            enable_chunked_prefill=True,
+            max_num_batched_tokens=2048,
+            mm_processor_kwargs={
+                "min_pixels": 28 * 28,
+                "max_pixels": 1280 * 28 * 28,
+                "fps": 1,  # Extract frames at 1 fps
+            },
+        ),
+        runtime_env=dict(
+            env_vars=dict(
+                HF_TOKEN="your_huggingface_token",
+            ),
+        ),
+        batch_size=16,
+        accelerator_type="L4",  # Adjust based on your hardware
+        concurrency=1,
+        has_video=True,  # Enable video processing
+    )
+    
+    def video_preprocess(row: dict) -> dict:
+        return dict(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a helpful assistant that can analyze videos."
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": row["question"]
+                        },
+                        {
+                            "type": "video",
+                            # Ray Data handles video files from paths or URLs
+                            "video": row["video_path"]
+                        }
+                    ]
+                },
+            ],
+            sampling_params=dict(
+                temperature=0.3,
+                max_tokens=150,
+            ),
+        )
+    
+    def video_postprocess(row: dict) -> dict:
+        return {
+            "response": row["generated_text"],
+        }
+    
+    video_processor = build_llm_processor(
+        video_processor_config,
+        preprocess=video_preprocess,
+        postprocess=video_postprocess,
+    )
+    
+    processed_videos = video_processor(videos_dataset).materialize()
+    processed_videos.show(1)
+
+**Example 2: Using InternVL3 with Video Input**
+
+.. testcode::
+
+    import ray
+    from ray.data.llm import vLLMEngineProcessorConfig, build_llm_processor
+    
+    # Create a dataset with video files or URLs
+    videos_dataset = ray.data.from_items([
+        {"video_path": "path/to/video.mp4", 
+         "question": "Describe what's happening in this video."}
+    ])
+    
+    # Configure the processor for InternVL3
+    internvl_config = vLLMEngineProcessorConfig(
+        model_source="OpenGVLab/InternVL3-2B",
+        engine_kwargs=dict(
+            trust_remote_code=True,
+            max_model_len=8192,
+            mm_processor_kwargs={
+                "fps": 1,  # Extract frames at 1 fps
+            },
+        ),
+        batch_size=16,
+        accelerator_type="L4",
+        concurrency=1,
+        has_video=True,  # Enable video processing
+    )
+    
+    def internvl_preprocess(row: dict) -> dict:
+        return dict(
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "video",
+                            "video": row["video_path"]
+                        },
+                        {
+                            "type": "text",
+                            "text": row["question"]
+                        }
+                    ]
+                }
+            ],
+            sampling_params=dict(
+                temperature=0.3,
+                max_tokens=150,
+            ),
+        )
+    
+    def internvl_postprocess(row: dict) -> dict:
+        return {
+            "response": row["generated_text"],
+        }
+    
+    internvl_processor = build_llm_processor(
+        internvl_config,
+        preprocess=internvl_preprocess,
+        postprocess=internvl_postprocess,
+    )
+    
+    processed_videos = internvl_processor(videos_dataset).materialize()
+    processed_videos.show(1)
+
+Video Processing Parameters
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When processing videos, you can configure several parameters through the ``mm_processor_kwargs`` in the engine configuration:
+
+- ``fps``: Frames per second to extract (default is 1)
+- ``num_frames``: Total number of frames to extract, evenly distributed throughout the video (if -1, uses fps-based extraction)
+- ``min_pixels``: Minimum pixel area for video frames (typically 28 * 28)
+- ``max_pixels``: Maximum pixel area for video frames (typically much larger)
+
+Different models may require different prompt formats for video inputs. Always refer to the model's documentation for the correct format.
+
 
 .. _openai_compatible_api_endpoint:
 

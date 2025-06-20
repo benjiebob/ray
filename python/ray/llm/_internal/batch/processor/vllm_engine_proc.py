@@ -24,6 +24,7 @@ from ray.llm._internal.batch.stages import (
     ChatTemplateStage,
     DetokenizeStage,
     PrepareImageStage,
+    PrepareVideoStage,
     TokenizeStage,
     vLLMEngineStage,
 )
@@ -107,6 +108,23 @@ def build_vllm_engine_processor(
                     concurrency=processor_concurrency,
                     batch_size=config.batch_size,
                 ),
+            )
+        )
+    
+    if config.has_video:
+        # Get video processing parameters from mm_processor_kwargs if available
+        fps = config.engine_kwargs.get("mm_processor_kwargs", {}).get("fps", 1)
+        num_frames = config.engine_kwargs.get("mm_processor_kwargs", {}).get("num_frames", -1)
+        
+        stages.append(
+            PrepareVideoStage(
+                map_batches_kwargs=dict(
+                    zero_copy_batch=True,
+                    concurrency=processor_concurrency,
+                    batch_size=config.batch_size,
+                ),
+                num_frames=num_frames,
+                fps=fps,
             )
         )
     if config.apply_chat_template:
